@@ -54,4 +54,4 @@ streamlit run app.py
 - 📌 Enable caching for faster processing.
 
 ## Author
-Developed by **Monpara Romil Kamleshbhai** 🚀
+Developed by **Romil Monpara** 🚀
