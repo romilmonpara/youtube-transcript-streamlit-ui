@@ -1,0 +1,9 @@
+streamlit
+youtube-transcript-api
+nltk
+scikit-learn
+transformers
+textblob
+numpy
+tensorflow
+tf-keras
