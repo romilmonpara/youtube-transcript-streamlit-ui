@@ -79,7 +79,7 @@ streamlit run app.py
 
 ---
 
-## 🧪 How to Use
+## 🤖 How to Use
 
 1. Open the app in your browser after launching Streamlit.
 2. Paste a **YouTube video URL** in the input box.
@@ -133,13 +133,7 @@ streamlit run app.py
 - 🌐 Multilingual transcript support  
 - ⚡ Faster summarization with GPU model serving  
 - 🧠 Use more advanced models like BART or Pegasus  
-- 🖼️ Improve UI with themes and mobile responsiveness  
-
----
-
-## 📜 License
-
-This project is for educational purposes only.
+- 🖼️ Improve UI with themes and mobile responsiveness
 
 ---
 
@@ -149,7 +143,5 @@ This project is for educational purposes only.
 - NLTK & TextBlob teams  
 - Streamlit Community  
 - YouTube Transcript API developers
-
----
 
 ---
