@@ -152,9 +152,4 @@ This project is for educational purposes only.
 
 ---
 
-## Author
-- Developed by **Romil Monpara** 🚀
-- **GitHub:** [@romilmonpara](https://github.com/romilmonpara)
-
-
 ---
