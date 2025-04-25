@@ -145,3 +145,5 @@ streamlit run app.py
 - YouTube Transcript API developers
 
 ---
+## ⭐ Star this repo if you find it useful! ⭐
+---
