@@ -12,11 +12,11 @@ It provides:
 - 📥 **Export** options to download the results as `.txt` or `.csv`
 
 ---
-
 ## 👨‍💻 Developer Info
 
-- **Name:** Romil Monpara
-
+- **Full Name:** Monpara Romil Kamleshbhai
+- **GitHub:** [https://github.com/romilmonpara](https://github.com/romilmonpara)
+- **LinkedIn:** [https://www.linkedin.com/in/romilmonpara](https://www.linkedin.com/in/romilmonpara)
 ---
 
 ## 🚀 Features
