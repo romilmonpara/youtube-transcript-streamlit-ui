@@ -1,9 +1,11 @@
 streamlit
 youtube-transcript-api
+pytube
 nltk
-scikit-learn
-transformers
 textblob
-numpy
-tensorflow
-tf-keras
+transformers
+scikit-learn
+matplotlib
+pandas
+torch
+sentencepiece
