@@ -15,6 +15,7 @@ It provides:
 ## 👨‍💻 Developer Info
 
 - **Full Name:** Monpara Romil Kamleshbhai
+- 🎓 B.Tech in Information Technology, LJIET (Graduating in 2027)
 - **GitHub:** [https://github.com/romilmonpara](https://github.com/romilmonpara)
 - **LinkedIn:** [https://www.linkedin.com/in/romilmonpara](https://www.linkedin.com/in/romilmonpara)
 ---
