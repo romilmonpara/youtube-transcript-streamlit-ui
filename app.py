@@ -21,33 +21,54 @@ import base64
 import pandas as pd
 import matplotlib.pyplot as plt
 from typing import List, Dict, Union, Tuple
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Constants
 MAX_TEXT_LENGTH = 4000  # For summarization
 MIN_TEXT_LENGTH = 50    # Minimum for processing
 DEFAULT_SUMMARY_LENGTH = 500
 
-nltk.download('punkt')
-nltk.download('wordnet')
-nltk.download('stopwords')
-nltk.download('omw-1.4')
-nltk.download('vader_lexicon')
+nltk.download('punkt', quiet=True)
+nltk.download('wordnet', quiet=True)
+nltk.download('stopwords', quiet=True)
+nltk.download('omw-1.4', quiet=True)
+nltk.download('vader_lexicon', quiet=True)
 
 @st.cache_resource
 def load_models():
     """Load all ML models once and cache them"""
-    return {
-        'summarizer': pipeline("summarization", model="t5-small", framework="tf"),
-        'sentiment_analyzer': SentimentIntensityAnalyzer()
-    }
+    try:
+        # Use PyTorch backend instead of TensorFlow
+        summarizer = pipeline(
+            "summarization", 
+            model="t5-small", 
+            framework="pt",
+            tokenizer="t5-small",
+            torch_dtype='auto'
+        )
+        return {
+            'summarizer': summarizer,
+            'sentiment_analyzer': SentimentIntensityAnalyzer()
+        }
+    except Exception as e:
+        logger.error(f"Error loading models: {e}")
+        # Fallback to simple summarization without transformers
+        return {
+            'summarizer': None,
+            'sentiment_analyzer': SentimentIntensityAnalyzer()
+        }
 
 def summarize_text(text: str, summarizer, max_length: int = DEFAULT_SUMMARY_LENGTH) -> str:
     """
-    Summarizes text using T5 model
+    Summarizes text using T5 model or fallback method
     
     Args:
         text (str): Input text to summarize
-        summarizer: Loaded summarization pipeline
+        summarizer: Loaded summarization pipeline or None
         max_length (int): Maximum length of summary
         
     Returns:
@@ -59,15 +80,22 @@ def summarize_text(text: str, summarizer, max_length: int = DEFAULT_SUMMARY_LENG
     text = text[:MAX_TEXT_LENGTH]  # Limit for summarization model
 
     try:
-        summary = summarizer(
-            text, 
-            max_length=min(len(text)//2, max_length), 
-            min_length=30, 
-            do_sample=False
-        )
-        return summary[0]['summary_text']
+        if summarizer is not None:
+            # Use transformers model
+            summary = summarizer(
+                text, 
+                max_length=min(len(text)//2, max_length), 
+                min_length=30, 
+                do_sample=False,
+                truncation=True
+            )
+            return summary[0]['summary_text']
+        else:
+            # Fallback to extractive summarization
+            return extractive_summarization(text)
     except Exception as e:
-        return f"Error in summarization: {str(e)}"
+        logger.warning(f"Summarization failed, using fallback: {e}")
+        return extractive_summarization(text)
 
 def extractive_summarization(text: str, sentences_count: int = 3) -> str:
     """
@@ -80,13 +108,13 @@ def extractive_summarization(text: str, sentences_count: int = 3) -> str:
     Returns:
         str: Extracted summary
     """
-    sentences = sent_tokenize(text)
-    if len(sentences) <= sentences_count:
-        return text
-    
-    # Simple TF-IDF based sentence ranking
     try:
-        vectorizer = TfidfVectorizer(stop_words='english')
+        sentences = sent_tokenize(text)
+        if len(sentences) <= sentences_count:
+            return text
+        
+        # Simple TF-IDF based sentence ranking
+        vectorizer = TfidfVectorizer(stop_words='english', max_features=1000)
         sentence_vectors = vectorizer.fit_transform(sentences)
         sentence_scores = sentence_vectors.sum(axis=1)
         
@@ -97,9 +125,11 @@ def extractive_summarization(text: str, sentences_count: int = 3) -> str:
         )[:sentences_count]
         
         return ' '.join(sentences[i] for i, _ in sorted(top_sentences))
-    except:
-        # Fallback to first few sentences if TF-IDF fails
-        return ' '.join(sentences[:sentences_count])
+    except Exception as e:
+        logger.error(f"Extractive summarization failed: {e}")
+        # Final fallback - return first few sentences
+        sentences = sent_tokenize(text)
+        return ' '.join(sentences[:min(3, len(sentences))])
 
 def chunk_text(text: str, max_chunk_size: int = 4000) -> List[str]:
     """
@@ -142,17 +172,18 @@ def extract_keywords(text: str) -> List[str]:
         List[str]: Top keywords
     """
     try:
-        vectorizer = TfidfVectorizer(ngram_range=(1, 2), stop_words='english')
+        vectorizer = TfidfVectorizer(ngram_range=(1, 2), stop_words='english', max_features=50)
         X = vectorizer.fit_transform([text])
         features = vectorizer.get_feature_names_out()
         scores = X.toarray()[0]
         return [features[i] for i in scores.argsort()[-5:][::-1]]
-    except:
+    except Exception as e:
+        logger.warning(f"TF-IDF keyword extraction failed: {e}")
         # Fallback to simple method if TF-IDF fails
         lemmatizer = WordNetLemmatizer()
         words = re.findall(r'\b\w+\b', text.lower())
         words = [lemmatizer.lemmatize(word) for word in words 
-                if word not in stopwords.words('english') and len(word) > 1]
+                if word not in stopwords.words('english') and len(word) > 2]
         return [word for word, _ in Counter(words).most_common(5)]
 
 def topic_modeling(text: str) -> List[List[str]]:
@@ -170,7 +201,7 @@ def topic_modeling(text: str) -> List[List[str]]:
         return [["Not enough text for topic modeling"]]
 
     try:
-        vectorizer = CountVectorizer(max_df=0.9, min_df=1, stop_words='english')
+        vectorizer = CountVectorizer(max_df=0.9, min_df=1, stop_words='english', max_features=100)
         tf = vectorizer.fit_transform(sentences)
 
         if tf.shape[1] == 0:
@@ -191,6 +222,7 @@ def topic_modeling(text: str) -> List[List[str]]:
 
         return topics
     except Exception as e:
+        logger.error(f"Topic modeling failed: {e}")
         return [[f"Topic modeling failed: {str(e)}"]]
 
 def detect_language(text: str) -> str:
@@ -218,13 +250,16 @@ def check_transcript_quality(transcript) -> float:
     Returns:
         float: Quality score (words per second)
     """
-    total_duration = sum([entry['duration'] for entry in transcript])
-    total_text = sum([len(entry['text']) for entry in transcript])
-    
-    # Calculate words per second as a quality metric
-    words_per_second = total_text / total_duration / 5  # Approximate word length
-    
-    return words_per_second  # Values > 2.5 indicate good quality
+    try:
+        total_duration = sum([entry['duration'] for entry in transcript])
+        total_text = sum([len(entry['text']) for entry in transcript])
+        
+        # Calculate words per second as a quality metric
+        words_per_second = total_text / total_duration / 5  # Approximate word length
+        
+        return words_per_second  # Values > 2.5 indicate good quality
+    except:
+        return 0.0
 
 def extract_video_id(url: str) -> Union[str, None]:
     """
@@ -263,6 +298,9 @@ def get_cached_transcript(video_id: str) -> Union[List[Dict], None]:
         return YouTubeTranscriptApi.get_transcript(video_id)
     except (TranscriptsDisabled, NoTranscriptFound):
         return None
+    except Exception as e:
+        logger.error(f"Error fetching transcript: {e}")
+        return None
 
 def get_video_metadata(video_id: str) -> Dict[str, Union[str, int]]:
     """
@@ -283,7 +321,8 @@ def get_video_metadata(video_id: str) -> Dict[str, Union[str, int]]:
             'views': f"{yt.views:,}",
             'publish_date': yt.publish_date.strftime("%Y-%m-%d") if yt.publish_date else "Unknown"
         }
-    except:
+    except Exception as e:
+        logger.error(f"Error fetching metadata: {e}")
         return {}
 
 def create_download_link(text: str, filename: str, label: str) -> str:
@@ -309,21 +348,25 @@ def sentiment_visualization(textblob_sent: Dict, vader_sent: Dict) -> None:
         textblob_sent (Dict): TextBlob sentiment results
         vader_sent (Dict): VADER sentiment results
     """
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
-    
-    ax1.bar(['Polarity', 'Subjectivity'], 
-            [textblob_sent['polarity'], textblob_sent['subjectivity']], 
-            color=['skyblue', 'salmon'])
-    ax1.set_ylim(-1, 1)
-    ax1.set_title('TextBlob Sentiment')
-    
-    vader_scores = {k: v for k, v in vader_sent.items() if k != 'compound'}
-    ax2.bar(vader_scores.keys(), vader_scores.values())
-    ax2.set_ylim(0, 1)
-    ax2.set_title('VADER Sentiment')
-    
-    plt.tight_layout()
-    st.pyplot(fig)
+    try:
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+        
+        ax1.bar(['Polarity', 'Subjectivity'], 
+                [textblob_sent['polarity'], textblob_sent['subjectivity']], 
+                color=['skyblue', 'salmon'])
+        ax1.set_ylim(-1, 1)
+        ax1.set_title('TextBlob Sentiment')
+        
+        vader_scores = {k: v for k, v in vader_sent.items() if k != 'compound'}
+        ax2.bar(vader_scores.keys(), vader_scores.values())
+        ax2.set_ylim(0, 1)
+        ax2.set_title('VADER Sentiment')
+        
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close()
+    except Exception as e:
+        logger.error(f"Error creating sentiment visualization: {e}")
 
 def create_detailed_sentiment_analysis(text: str, sentiment_analyzer) -> None:
     """
@@ -333,21 +376,25 @@ def create_detailed_sentiment_analysis(text: str, sentiment_analyzer) -> None:
         text (str): Input text
         sentiment_analyzer: VADER sentiment analyzer
     """
-    sentences = sent_tokenize(text)
-    if len(sentences) < 5:
-        st.info("Not enough sentences for detailed sentiment analysis")
-        return
-    
-    sentiments = [sentiment_analyzer.polarity_scores(s) for s in sentences]
-    
-    fig, ax = plt.subplots(1, 1, figsize=(10, 4))
-    ax.plot([s['compound'] for s in sentiments])
-    ax.set_title('Sentiment Progression Throughout Video')
-    ax.set_xlabel('Sentence Index')
-    ax.set_ylabel('Sentiment Score')
-    ax.axhline(y=0, color='r', linestyle='--', alpha=0.3)
-    ax.fill_between(range(len(sentiments)), [s['compound'] for s in sentiments], alpha=0.3)
-    st.pyplot(fig)
+    try:
+        sentences = sent_tokenize(text)
+        if len(sentences) < 5:
+            st.info("Not enough sentences for detailed sentiment analysis")
+            return
+        
+        sentiments = [sentiment_analyzer.polarity_scores(s) for s in sentences]
+        
+        fig, ax = plt.subplots(1, 1, figsize=(10, 4))
+        ax.plot([s['compound'] for s in sentiments])
+        ax.set_title('Sentiment Progression Throughout Video')
+        ax.set_xlabel('Sentence Index')
+        ax.set_ylabel('Sentiment Score')
+        ax.axhline(y=0, color='r', linestyle='--', alpha=0.3)
+        ax.fill_between(range(len(sentiments)), [s['compound'] for s in sentiments], alpha=0.3)
+        st.pyplot(fig)
+        plt.close()
+    except Exception as e:
+        logger.error(f"Error creating detailed sentiment analysis: {e}")
 
 def main():
     """Main Streamlit application"""
@@ -361,7 +408,15 @@ def main():
     """)
     
     # Load models once
-    models = load_models()
+    try:
+        models = load_models()
+    except Exception as e:
+        st.error(f"Failed to load models: {e}")
+        st.info("Using fallback summarization methods")
+        models = {
+            'summarizer': None,
+            'sentiment_analyzer': SentimentIntensityAnalyzer()
+        }
     
     # Sidebar for additional options
     with st.sidebar:
@@ -371,7 +426,6 @@ def main():
             100, 2000, DEFAULT_SUMMARY_LENGTH
         )
         show_details = st.checkbox("Show detailed processing", False)
-        enable_fallback = st.checkbox("Enable extractive summarization fallback", True)
     
     video_url = st.text_input("Enter YouTube Video URL:", "")
     
@@ -399,6 +453,8 @@ def main():
             if metadata:
                 st.subheader(metadata['title'])
                 st.caption(f"👤 {metadata['author']} | ⏱️ {metadata['length']} | 👀 {metadata['views']} views | 📅 {metadata.get('publish_date', 'Unknown')}")
+            else:
+                st.warning("Could not fetch video metadata")
             
             status_text.text("Fetching transcript...")
             transcript = get_cached_transcript(video_id)
@@ -434,11 +490,6 @@ def main():
             summary = summarize_text(video_text, models['summarizer'], max_summary_length)
             progress_bar.progress(70)
             
-            # Fallback to extractive summarization if needed
-            if "Error in summarization" in summary and enable_fallback:
-                st.info("Using extractive summarization as fallback")
-                summary = extractive_summarization(video_text)
-            
             status_text.text("Extracting keywords...")
             keywords = extract_keywords(video_text)
             progress_bar.progress(80)
@@ -468,11 +519,6 @@ def main():
                  'subjectivity': blob_sentiment.subjectivity},
                 vader_sentiment
             )
-            
-            # Detailed sentiment analysis
-            if len(video_text) > 500:  # Only for longer transcripts
-                with st.expander("Detailed Sentiment Analysis"):
-                    create_detailed_sentiment_analysis(video_text, models['sentiment_analyzer'])
             
             st.subheader("📥 Export Options")
             
@@ -506,12 +552,7 @@ def main():
             
         except Exception as e:
             st.error(f"An error occurred: {str(e)}")
-            if "CUDA out of memory" in str(e):
-                st.info("Try a shorter video or reduce the summary length")
-            elif "unavailable" in str(e).lower() or "private" in str(e).lower():
-                st.info("This video may be unavailable or private")
-            elif "age restricted" in str(e).lower():
-                st.info("This video is age-restricted and cannot be accessed without login")
+            logger.error(f"Application error: {e}")
 
 if __name__ == "__main__":
     main()
